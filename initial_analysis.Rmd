@@ -1,0 +1,52 @@
+---
+title: "cleaning_and_setup"
+author: "Errol Kaylor"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rio)
+library(here)
+library(janitor)
+library(pdftools)
+library(tabulapdf)
+```
+
+
+```{r data import}
+test_1<- tabulapdf::extract_tables("data/ug-computer-science.pdf")
+
+
+int_data_test <- tabulapdf::extract_areas("data/ug-computer-science.pdf")
+
+
+cs_pdf <- pdf_data("data/ug-computer-science.pdf")
+
+new_text <- pdf_text("data/ug-data-science.pdf")
+
+
+
+prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>% 
+  clean_names()
+```
+
+Initial Steps
+1. Visualize Prereq Data
+2. Extract Course Data from online sources
+3. Process Course Data, cross with prereq data for consilidated dataset.
+
+```{r prereq visualization and cleaning}
+test_set<- prereqs %>% 
+  filter(subject == "ARCH" | subject == "CS") %>% 
+  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) )
+
+```
+
+
+
+
+
+
