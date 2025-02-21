@@ -13,39 +13,132 @@ library(here)
 library(janitor)
 library(pdftools)
 library(tabulapdf)
+library(flexdashboard)
+library(igraph)
+library(readxl)
+
 ```
 
 
 ```{r data import}
-test_1<- tabulapdf::extract_tables("data/ug-computer-science.pdf")
-
-
-int_data_test <- tabulapdf::extract_areas("data/ug-computer-science.pdf")
-
-
-cs_pdf <- pdf_data("data/ug-computer-science.pdf")
-
-new_text <- pdf_text("data/ug-data-science.pdf")
-
+all_courses<- import(here("data/UG_course_prereq_split - UG_course_prereq.csv.csv")) %>% 
+  clean_names() %>% 
+  rename(course_id = "v1",
+         has_prereq = "v2",
+         course_dept = "v3",
+         course_num = "v4") %>% 
+  select(-c(5,6)) %>% 
+  filter(course_id != "Common_Course_ID") %>% 
+  filter(course_dept == "CS" | course_dept == "MATH")
 
 
 prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>% 
   clean_names()
 ```
 
-Initial Steps
-1. Visualize Prereq Data
-2. Extract Course Data from online sources
-3. Process Course Data, cross with prereq data for consilidated dataset.
 
-```{r prereq visualization and cleaning}
+```{r visualization and cleaning}
+  
+sample_data <- read_excel("data/Untitled spreadsheet (1).xlsx") %>% 
+  add_row(Prerequisite = "CS299",Course = "CS299")
+
 test_set<- prereqs %>% 
-  filter(subject == "ARCH" | subject == "CS") %>% 
-  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) )
+  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) ) %>% 
+  filter(subject=="CS" | subject == "MATH") %>% 
+  group_by(course_identification) %>% 
+  reframe(count_offered = n(),
+          prereqtext = prerequisite_text) %>% 
+  distinct()
+
+
+all_courses <- full_join(all_courses,test_set, by=join_by(course_id==course_identification))
+
 
 ```
 
+Need to create a parser for the prerequisites
+Aggregate Course Data
+- Number of prerequisites
+- Frequency Offered
+- Number of layers of prerequisites
+- Number of dependencies
 
+Problems -- singletons, prereqs from outside departments!
+```{r prereq parser}
+
+
+#goal is generate a list of edges and the requirements for each edge to be active. 
+
+all_courses_filtered<- all_courses %>% 
+  select(-c(2,3,4,5)) %>% 
+  na.omit()
+all_courses$prereqtext[[1]]
+all_courses$prereqtext[[2]]
+layer_1 <- str_split(all_courses$prereqtext[[2]],pattern = " OR ")
+
+layer_1[[1]]
+prereq_sample <- str_split(layer_1[[1]],pattern = " FOR LEVEL UG WITH MIN. GRADE OF ")
+
+prereq_transposed <- list_transpose(prereq_sample)
+
+edge_list <- tibble(prereq = prereq_transposed[[1]],
+                    grade_req = prereq_transposed[[2]],
+                    course = all_courses$course_id[[2]])
+```
+
+```{r}
+get_prereq_edges <-  function(all_courses,index){
+  layer_1 <- str_split(all_courses$prereqtext[[index]],pattern = " OR ")
+  prereqs <- list_transpose(str_split(layer_1[[1]],pattern = " FOR LEVEL UG WITH MIN. GRADE OF "))
+  edge_list <- tibble(prereq = prereqs[[1]],
+                      grade_req = prereqs[[2]],
+                      course = all_courses$course_id[[index]])
+  edge_list
+}
+?if_any
+get_prereq_edges(all_courses,5)
+
+
+edge_list <- tibble()
+for (i in seq_along(all_courses[[1]])){
+  get_prereq_edges(all_courses,i)
+}
+```
+
+
+
+Visualization Ideas
+Overview/Course Analytics Definitions
+
+Department/Degree View
+-All courses in department
+-
+
+
+```{r shiny_dash}
+
+sample_vis <- graph_from_edgelist(as.matrix(sample_data))
+grid_vis <-layout_on_grid(sample_vis)
+plot(grid_vis)
+g <- make_lattice( c(3,3) )
+layout_on_grid(g)
+
+plot(g)
+?layout_on_grid
+
+
+tree <- make_tree(20, 3)
+plot(tree, layout = layout_as_tree)
+plot(tree, layout = layout_as_tree(tree, flip.y = FALSE))
+plot(tree, layout = layout_as_tree(tree, circular = TRUE))
+
+tree2 <- make_tree(10, 3) + make_tree(10, 2)
+plot(tree2, layout = layout_as_tree)
+plot(tree2, layout = layout_as_tree(tree2,
+  root = c(1, 11),
+  rootlevel = c(2, 1)
+))
+```
 
 
 
