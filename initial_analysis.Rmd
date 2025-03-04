@@ -16,6 +16,7 @@ library(tabulapdf)
 library(flexdashboard)
 library(igraph)
 library(readxl)
+library(CurricularAnalytics)
 
 ```
 
@@ -106,30 +107,38 @@ get_prereq_edges <-  function(all_courses,index){
   layer_0 <- str_split(all_courses$prereqtext[[index]],pattern = " AND ")
   layer_1 <- str_split(flatten(layer_0),pattern = " OR ")
   prereqs <- list_transpose(str_split(flatten(layer_1),pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF"))
-  print(prereqs)
+
   edge_list <- tibble(prereq = prereqs[[1]],
+                      course = all_courses$course_id[[index]],
                       grade_req = prereqs[[2]],
-                      course = all_courses$course_id[[index]])
+                      nums = str_extract(course,pattern = "\\d\\d\\d" ),
+                      x = str_sub(nums,end=1),
+         y = str_sub(nums,2)
+                      )
   
   
   edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
   edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
   
+  
+  
+  
   edge_list
 }
-?if_any
-get_prereq_edges(all_courses_filtered,6)
 
+
+all_courses_filtered<- all_courses_filtered  %>% 
+  mutate(nums = str_extract(all_courses_filtered$course_id,pattern = "\\d\\d\\d" ),
+         x str_sub(nums,end=1),
+         y = str_sub(nums,2))
 
 edge_list <- tibble()
 for (i in seq_along(all_courses_filtered[[1]])){
-  print(i)
   edge_list <-rbind(get_prereq_edges(all_courses_filtered,i),edge_list)
 }
 
 
 ```
-
 
 
 Visualization Ideas
@@ -142,27 +151,17 @@ Department/Degree View
 
 ```{r shiny_dash}
 
-sample_vis <- graph_from_edgelist(as.matrix(sample_data))
-grid_vis <-layout_on_grid(sample_vis)
-plot(grid_vis)
-g <- make_lattice( c(3,3) )
-layout_on_grid(g)
 
-plot(g)
-?layout_on_grid
+nodelist <- data.frame(edge_list$course,edge_list$x,
+                       edge_list$y) %>% 
+  unique()
+net<- graph_from_data_frame(vertices = nodelist, d=edge_list)
 
 
-tree <- make_tree(20, 3)
-plot(tree, layout = layout_as_tree)
-plot(tree, layout = layout_as_tree(tree, flip.y = FALSE))
-plot(tree, layout = layout_as_tree(tree, circular = TRUE))
+plot(net,vertex.shape = "none", edge.arrow.size=.4,layout = l)
 
-tree2 <- make_tree(10, 3) + make_tree(10, 2)
-plot(tree2, layout = layout_as_tree)
-plot(tree2, layout = layout_as_tree(tree2,
-  root = c(1, 11),
-  rootlevel = c(2, 1)
-))
+
+
 ```
 
 
