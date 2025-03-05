@@ -216,7 +216,7 @@ visNetwork(C$node_list,C$edge_list,width="100%") %>%
 
 shinyApp(ui, server)
 
-
+generate_coords(C)
 ```
 
 #write my vignettes on what we're trying to do, have a comparison of two majors!
