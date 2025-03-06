@@ -149,7 +149,6 @@ Department/Degree View
 -
 
 ```{r}
-test_array <- array(0,dim=c(4,8))
 
 #term is used for horizontal spacing -- use department as chunk area (+10, then index)
 generate_coords <- function(curriculum_graph) {
@@ -157,7 +156,7 @@ generate_coords <- function(curriculum_graph) {
 
   #track num courses in each dept/term, increment by 1, starting from 0
   #
-  num_in_section <- array(0,dim = c(4,8))
+  num_in_section <- array(0,dim = c(4,9))
   y_coord <- 0
   old_dept <- "not!"
   old_term <- 0
@@ -174,7 +173,7 @@ generate_coords <- function(curriculum_graph) {
     )
     section_depth <- num_in_section[y_starter,term]
     
-    num_in_section[y_starter,term]<-section_depth+1
+    num_in_section[y_starter,term]<-section_depth+2
     
     ycoord <- (y_starter * 20) + section_depth
     
@@ -220,7 +219,7 @@ ui <- dashboardPage(
       # First tab content
       tabItem(tabName = "dashboard",
         fluidRow(
-          box(visNetworkOutput("mynetworkid", height = 500,width=500))
+          box(visNetworkOutput("mynetworkid"))
           )
         )
       ),
