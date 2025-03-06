@@ -148,27 +148,53 @@ Department/Degree View
 -All courses in department
 -
 
-
 ```{r}
+test_array <- array(0,dim=c(4,8))
+
+#term is used for horizontal spacing -- use department as chunk area (+10, then index)
 generate_coords <- function(curriculum_graph) {
   coords <- matrix(ncol = 2)
 
-  old_term <- 1
-  idx <- -1
-  for (term in curriculum_graph$node_list$term) {
-    if (old_term != term) {
-      idx <- 0
-      old_term <- term
-    } else{
-      idx <- idx + 1
-    }
-    coords <- rbind(coords, c(term, idx))
+  #track num courses in each dept/term, increment by 1, starting from 0
+  #
+  num_in_section <- array(0,dim = c(4,8))
+  y_coord <- 0
+  old_dept <- "not!"
+  old_term <- 0
+  for (i in curriculum_graph$node_list$id) {
+    term <- curriculum_graph$node_list$term[i]
+    label <- curriculum_graph$node_list$label[i]
+    nums <- as.numeric(str_extract(label,pattern = "\\d\\d\\d"))
+    dept <- str_extract(label,pattern ="[A-Z]+")
+    y_starter <- case_when(
+      dept == "CS" ~ 1,
+      dept == "MATH" ~ 2,
+      dept == "PHYS" ~ 3,
+      dept == "PEO" ~ 4
+    )
+    section_depth <- num_in_section[y_starter,term]
+    
+    num_in_section[y_starter,term]<-section_depth+1
+    
+    ycoord <- (y_starter * 20) + section_depth
+    
+    
+    coords <- rbind(coords, c(term,((y_starter * 20) + section_depth)))
+
   }
 
   coords <- stats::na.omit(coords)
   return(coords)
 }
+
 ```
+
+if (old_term != term) {
+      idx <- 0
+      old_term <- term
+    } else{
+      idx <- idx + 1
+    }
 
 
 
@@ -176,7 +202,10 @@ generate_coords <- function(curriculum_graph) {
 
 
 
+#C <- curriculum_graph_from_csv(here("data/sample_1.csv"))
+
 C <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+
 
 ui <- dashboardPage(
   dashboardHeader(title = "UO Curriculum Analytics"),
@@ -191,7 +220,7 @@ ui <- dashboardPage(
       # First tab content
       tabItem(tabName = "dashboard",
         fluidRow(
-          box(visNetworkOutput("mynetworkid", height = 250))
+          box(visNetworkOutput("mynetworkid", height = 500,width=500))
           )
         )
       ),
@@ -216,7 +245,18 @@ visNetwork(C$node_list,C$edge_list,width="100%") %>%
 
 shinyApp(ui, server)
 
-generate_coords(C)
+
+coords <- generate_coords(C)
+coords
+
+visNetwork(C$node_list,C$edge_list,width="100%") %>% 
+  visEdges(arrows = "to") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = coords)
+
+
+
+
+
 ```
 
 #write my vignettes on what we're trying to do, have a comparison of two majors!
