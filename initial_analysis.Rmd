@@ -42,14 +42,14 @@ prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>%
 ```{r visualization and cleaning}
   
 sample_data <- read_excel("data/Untitled spreadsheet (1).xlsx") %>% 
-  add_row(Prerequisite = "CS299",Course = "CS299")
+  add_row(requisites = "CS299",Course = "CS299")
 
 test_set<- prereqs %>% 
   filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) ) %>% 
   filter(subject=="CS" | subject == "MATH") %>% 
   group_by(course_identification) %>% 
   reframe(count_offered = n(),
-          prereqtext = prerequisite_text) %>% 
+          prereqtext = requisites_text) %>% 
   distinct()
 
 
@@ -58,11 +58,11 @@ all_courses <- full_join(all_courses,test_set, by=join_by(course_id==course_iden
 
 ```
 
-Need to create a parser for the prerequisites
+Need to create a parser for the requisitess
 Aggregate Course Data
-- Number of prerequisites
+- Number of requisitess
 - Frequency Offered
-- Number of layers of prerequisites
+- Number of layers of requisitess
 - Number of dependencies
 
 
@@ -150,18 +150,22 @@ Department/Degree View
 
 ```{r}
 
-#term is used for horizontal spacing -- use department as chunk area (+10, then index)
+#C <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+
+#term is used for horizontal spacing -- use department as chunk area (+20, then index)
+#
+#
 generate_coords <- function(curriculum_graph) {
   coords <- matrix(ncol = 2)
 
   #track num courses in each dept/term, increment by 1, starting from 0
   #
-  num_in_section <- array(0,dim = c(4,9))
+  num_in_section <- array(0,dim = c(5,10))
   y_coord <- 0
   old_dept <- "not!"
   old_term <- 0
   for (i in curriculum_graph$node_list$id) {
-    term <- curriculum_graph$node_list$term[i]
+    term <- as.numeric(curriculum_graph$node_list$term[i])
     label <- curriculum_graph$node_list$label[i]
     nums <- as.numeric(str_extract(label,pattern = "\\d\\d\\d"))
     dept <- str_extract(label,pattern ="[A-Z]+")
@@ -171,6 +175,7 @@ generate_coords <- function(curriculum_graph) {
       dept == "PHYS" ~ 3,
       dept == "PEO" ~ 4
     )
+
     section_depth <- num_in_section[y_starter,term]
     
     num_in_section[y_starter,term]<-section_depth+2
@@ -188,22 +193,11 @@ generate_coords <- function(curriculum_graph) {
 
 ```
 
-if (old_term != term) {
-      idx <- 0
-      old_term <- term
-    } else{
-      idx <- idx + 1
-    }
 
 
 
 ```{r shiny_dash}
 
-
-
-#C <- curriculum_graph_from_csv(here("data/sample_1.csv"))
-
-C <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 
 
 ui <- dashboardPage(
@@ -236,23 +230,31 @@ server <- function(input, output) {
 
   output$mynetworkid <- renderVisNetwork({
     coords <- generate_coords(C)
-visNetwork(C$node_list,C$edge_list,width="100%") %>% 
-  visEdges(arrows = "to") %>% 
-  visIgraphLayout(layout= "layout.norm",layoutMatrix = coords)
+visNetwork(C$node_list,C$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C$sc_total,
+      "Total Blocking Factor:",
+      C$bf_total,
+      "Total Delay Factor:",
+      C$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = C_coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visInteraction(navigationButtons = TRUE) %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
   })
 }
 
 shinyApp(ui, server)
-
-
-coords <- generate_coords(C)
-coords
-
-visNetwork(C$node_list,C$edge_list,width="100%") %>% 
-  visEdges(arrows = "to") %>% 
-  visIgraphLayout(layout= "layout.norm",layoutMatrix = coords)
-
-
 
 
 
@@ -260,5 +262,213 @@ visNetwork(C$node_list,C$edge_list,width="100%") %>%
 
 #write my vignettes on what we're trying to do, have a comparison of two majors!
 
+CS Overview
 
+term Meaning/Definitions
+
+Degree/Dept Comparisons
+
+
+
+
+```{r}
+
+raw_list <- read.csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+# Create list for storing pathways
+Gc <- list()
+
+set.seed(87460945)
+for (i in 1:50) {
+  # Generate degree pathway
+  pathway <-
+    data.frame(
+      id = NA,
+      label = NA,
+      term = NA,
+      requisites = NA
+    )
+
+  # First Year
+  pathway <-
+    rbind(pathway, cbind(
+      subset(raw_list, label == "CS210")
+    ))
+  samp <- sample(c("MATH251", "MATH246"), 1)
+  pathway <-
+    rbind(pathway, cbind(subset(raw_list, label == samp)))
+    samp <- sample(c("MATH252", "MATH247"), 1)
+  pathway <-
+    rbind(pathway, cbind(subset(raw_list, label == samp)))
+
+  samp <- sample(c(TRUE, FALSE), 1)
+
+    pathway <-
+      rbind(pathway, cbind(
+        subset(raw_list, label == "CS211")
+      ))
+
+  # samp <- c("PHYS 111", "PHYS 121")
+  # pathway <-
+  #   rbind(pathway, cbind(subset(ubco, label %in% samp), data.frame("term" =
+  #                                                                          c(1, 2))))
+  # 
+  # pathway <-
+  #   rbind(pathway, cbind(subset(
+  #     ubco, label %in% c("COSC 111", "COSC 121")
+  #   ), data.frame("term" = c(1, 2))))
+
+
+  # Second Year
+  pathway <-
+    rbind(pathway, cbind(subset(
+      raw_list,
+      label %in% c("CS212",
+                         "MATH231",
+                         "CS314",
+                         "MATH232",
+                         "CS322")
+    )))
+
+
+  # Third and Fourth Year
+  pathway <-
+    rbind(pathway, cbind(subset(
+      raw_list,
+      label %in% c("CS313",
+                         "CS315",
+                         "CS330",
+                         "CS415",
+                         "CS425",
+                         "CS422")
+    )))
+
+  #Math Requirements
+  samp <- sample(c("MATH253","MATH341","MATH343","MATH425","MATH345"),1)
+  pathway<-rbind(pathway,cbind(subset(raw_list,label == samp)))
+
+
+  upper_year_data <-
+    c("CS413","CS420","CS423","CS429","CS431","CS432","CS433","CS434","CS436","CS437","CS441","CS443","CS445","CS451","CS453","CS461","CS471","CS472","CS473")
+
+  course <- c()
+  while (length(unique(course)) < 5) {
+      course <- c(course, sample(upper_year_data, 1))
+  }
+
+  pathway <-
+    rbind(pathway, cbind(
+      subset(raw_list, label %in% unique(course))
+     ))
+
+  pathway <- na.omit(pathway)
+  rownames(pathway) <- 1:nrow(pathway)
+
+  # Construct node and edge list
+
+node_list <-
+  data.frame(
+    id = rownames(pathway),
+    label = pathway$label,
+    term = pathway$term
+  )
+
+edge_list <- data.frame(from = NA, to = NA)
+
+for (node_id in node_list$id) {
+    node_reqs <- subset(raw_list, id == node_id)$requisites
+    req_ids <- ""
+     if (node_reqs != "") {
+       req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
+       for (req_id in req_ids) {
+         if (!req_id %in% node_list$id){
+           req_node <- subset(raw_list,id == req_id)
+           node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+         }
+       }
+#      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
+
+      from <- rownames(subset(raw_list, id == node_id))
+      to <- rownames(subset(raw_list, id %in% req_ids))
+      if (length(to) > 1) {
+        for (id in to) {
+          edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+        }
+      } else {
+        edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+      }
+     }
+  }
+
+
+
+# for (node in node_list$label) {
+#   # node = "COSC 329"
+#   str <- subset(pathway, label == node)$requisites
+#   
+#   
+#   
+#   
+#   
+# 
+#   from <- rownames(subset(pathway, label == node))
+#   to <- rownames(subset(pathway, label %in% str))
+#   if (length(to) > 1) {
+#     for (id in to) {
+#       edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+#     }
+#   } else {
+#     edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+#   }
+# 
+# }
+edge_list <- na.omit(edge_list)
+node_list$id <- as.numeric(node_list$id)
+
+node_list$new_id <- 1:32
+new_id_list <- data.frame(
+  id = NA
+)
+new_edge_list <- data.frame(from = NA, to = NA)
+for (i in 1:40){
+  old_val <- edge_list$from[i]
+
+  new_val <- subset(node_list, id == old_val)$new_id
+  new_id_list <- rbind(new_id_list,new_val)
+}
+new_id_list <- na.omit(new_id_list)
+
+new_node_list <- data.frame(id = node_list$new_id,
+                            label = node_list$label,
+                            term = node_list$term)
+
+new_edge_list <- data.frame(from = new_id_list,
+                            to = edge_list$to) %>% 
+  rename(from = id) %>% 
+  mutate(from = as.character(from))
+
+C <- curriculum_graph_from_list(new_node_list, new_edge_list)
+Gc <- c(Gc, list(C))
+}
+```
+
+
+```{r}
+C<- curriculum_graph_from_list(new_node_list,new_edge_list)
+
+C$node_list$group <- C$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
+
+C_coords <- generate_coords(C)
+
+```
+
+
+```{r}
+C_orig <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+
+C_orig$node_list$group <- C_orig$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
+
+orig_coords <- generate_coords(C_orig)
+```
 
