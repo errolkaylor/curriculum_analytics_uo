@@ -215,7 +215,9 @@ Degree/Dept Comparisons
 
 raw_list <- read.csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 # Create list for storing pathways
+Gpathway <- list()
 Gc <- list()
+set.seed(6402025)
 for (i in 1:200) {
   # Generate degree pathway
   pathway <-
@@ -290,7 +292,6 @@ for (i in 1:200) {
 
   pathway <- na.omit(pathway)
   rownames(pathway) <- 1:nrow(pathway)
-
   # Construct node and edge list
 
 node_list <-
@@ -327,7 +328,36 @@ for (node_id in node_list$id) {
         edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
       }
      }
-  }
+}
+
+
+for (node_id in node_list$id) {
+    node_reqs <- subset(raw_list, id == node_id)$requisites
+    req_ids <- ""
+     if (node_reqs != "") {
+       req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
+       for (req_id in req_ids) {
+         if (!req_id %in% node_list$id){
+          
+           req_node <- subset(raw_list,id == req_id)
+           node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+
+         }
+       }
+#      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
+
+      from <- rownames(subset(raw_list, id == node_id))
+      to <- rownames(subset(raw_list, id %in% req_ids))
+      if (length(to) > 1) {
+        for (id in to) {
+          edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+        }
+      } else {
+        edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+      }
+     }
+}
+
 
 
 
@@ -364,10 +394,12 @@ new_node_list <- data.frame(id = node_list$new_id,
 new_edge_list <- data.frame(from = new_id_list,
                             to = new_to_list$id) %>% 
   rename(from = id) %>% 
-  mutate(from = as.character(from)) 
+  mutate(from = as.character(from)) %>% 
+  unique()
 
 C <- curriculum_graph_from_list(new_node_list, new_edge_list)
 Gc <- c(Gc, list(C))
+Gpathway<- c(Gpathway, list(pathway))
 }
 ```
 
@@ -438,6 +470,8 @@ kable(data.frame(Courses=C_max$node_list$label[idx]))
 
 idx <- !(C_min$node_list$label %in% C_max$node_list$label)
 kable(data.frame(Courses=C_min$node_list$label[idx]))
+
+
 ```
 
 
@@ -449,7 +483,7 @@ ui <- dashboardPage(
   dashboardHeader(title = "UO Curriculum Analytics"),
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+      menuItem("Degree Path Analysis", tabName = "dashboard", icon = icon("dashboard")),
       menuItem("Overview", tabName = "overview", icon = icon("th"))
     )
   ),
@@ -460,7 +494,11 @@ ui <- dashboardPage(
         fluidRow(
           box(title ="Max CS Degree Path",visNetworkOutput("maxnetworkid")),
           box(title = "Min CS Degree Path",visNetworkOutput("minnetworkid"))
-          )
+          ),
+        fluidRow(
+          box(title = "Max Path Courses Overview",tableOutput("max_only_courses")),
+          box(title = "Min Path Courses Overview",tableOutput("min_only_courses"))
+        )
         ),
       tabItem(tabName = "overview",
               fluidRow(
@@ -472,7 +510,8 @@ ui <- dashboardPage(
 
 
 server <- function(input, output) {
-
+  library(dplyr)
+  library(kableExtra)
   output$maxnetworkid <- renderVisNetwork({
     max_coords <- generate_coords(C_max)
 visNetwork(C_max$node_list,C_max$edge_list,width="100%",
@@ -491,10 +530,9 @@ visNetwork(C_max$node_list,C_max$edge_list,width="100%",
   visEdges(arrows = "to",color = "green") %>% 
   visIgraphLayout(layout= "layout.norm",layoutMatrix = max_coords) %>% 
   visOptions(selectedBy = "group") %>% 
-  visInteraction(navigationButtons = TRUE) %>% 
   visEvents(
       selectNode = "function(properties) {
-      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
     )
   })
   
@@ -516,10 +554,9 @@ visNetwork(C_min$node_list,C_min$edge_list,width="100%",
   visEdges(arrows = "to",color = "green") %>% 
   visIgraphLayout(layout= "layout.norm",layoutMatrix = min_coords) %>% 
   visOptions(selectedBy = "group") %>% 
-  visInteraction(navigationButtons = TRUE) %>% 
   visEvents(
       selectNode = "function(properties) {
-      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
     )
   })
   
@@ -541,17 +578,39 @@ visNetwork(C$node_list,C$edge_list,width="100%",
   visEdges(arrows = "to",color = "green") %>% 
   visIgraphLayout(layout= "layout.norm",layoutMatrix = coords) %>% 
   visOptions(selectedBy = "group") %>% 
-  visInteraction(navigationButtons = TRUE) %>% 
   visEvents(
       selectNode = "function(properties) {
-      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
     )
   })
+  
+  idx <- !(C_max$node_list$label %in% C_min$node_list$label)
+  max_tab <- data.frame(Max_Only_Courses=C_max$node_list$label[idx],
+                        BLocking_Factor = C_max$node_list$bf[idx],
+                        Delay_Factor = C_max$node_list$df[idx],
+                        Centrality = C_max$node_list$cf[idx],
+                        Structural_Complexity = C_max$node_list$sc[idx])
+
+  
+  
+  idx <- !(C_min$node_list$label %in% C_max$node_list$label)
+  min_tab<- data.frame(Min_Only_Courses=C_min$node_list$label[idx],
+                       BLocking_Factor = C_min$node_list$bf[idx],
+                        Delay_Factor = C_min$node_list$df[idx],
+                        Centrality = C_min$node_list$cf[idx],
+                        Structural_Complexity = C_min$node_list$sc[idx])
+  
+    output$max_only_courses <- renderTable(kable(max_tab),
+                                           striped = TRUE,
+                                           align = "c")
+    output$min_only_courses <- renderTable(kable(min_tab),
+                                           striped = TRUE,
+                                           align = "c")
 }
 
 shinyApp(ui, server)
 
 
-
 ```
+
 
