@@ -3,6 +3,7 @@ title: "cleaning_and_setup"
 author: "Errol Kaylor"
 date: "`r Sys.Date()`"
 output: html_document
+runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
@@ -184,7 +185,7 @@ generate_coords <- function(curriculum_graph) {
     ycoord <- (y_starter * 20) + section_depth
     
     
-    coords <- rbind(coords, c(term,((y_starter * 20) + section_depth)))
+    coords <- rbind(coords, c(term,((y_starter * 25) + section_depth)))
 
   }
 
@@ -243,16 +244,6 @@ for (i in 1:200) {
       rbind(pathway, cbind(
         subset(raw_list, label == "CS211")
       ))
-
-  # samp <- c("PHYS 111", "PHYS 121")
-  # pathway <-
-  #   rbind(pathway, cbind(subset(ubco, label %in% samp), data.frame("term" =
-  #                                                                          c(1, 2))))
-  # 
-  # pathway <-
-  #   rbind(pathway, cbind(subset(
-  #     ubco, label %in% c("COSC 111", "COSC 121")
-  #   ), data.frame("term" = c(1, 2))))
 
 
   # Second Year
@@ -408,19 +399,18 @@ C_max <- Gc[[max_index]]
 
 C_min <- Gc[[min_index]]
 
-```
+C<-curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 
-
-```{r}
-C<- curriculum_graph_from_list(new_node_list,new_edge_list)
 
 C$node_list$group <- C$node_list$label %>% 
   map(str_extract,pattern = "[A-Z]+")
 
-C_coords <- generate_coords(C)
+C_max$node_list$group <- C_max$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
 
+C_min$node_list$group <- C_min$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
 ```
-
 
 
 ```{r}
@@ -434,6 +424,12 @@ columns <- colnames(C_max$node_list[,c("bf","df","cf","sc")])
 for (column in columns) {
   print(paste("Ordering by column:", column))
   print_top_two_rows(C_max$node_list, column)
+}
+
+columns <- colnames(C$node_list[,c("bf","df","cf","sc")])
+for (column in columns) {
+  print(paste("Ordering by column:", column))
+  print_top_two_rows(C$node_list, column)
 }
 
 idx <- !(C_max$node_list$label %in% C_min$node_list$label)
@@ -454,7 +450,7 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
-      menuItem("Widgets", tabName = "widgets", icon = icon("th"))
+      menuItem("Overview", tabName = "overview", icon = icon("th"))
     )
   ),
   dashboardBody(
@@ -465,7 +461,11 @@ ui <- dashboardPage(
           box(title ="Max CS Degree Path",visNetworkOutput("maxnetworkid")),
           box(title = "Min CS Degree Path",visNetworkOutput("minnetworkid"))
           )
-        )
+        ),
+      tabItem(tabName = "overview",
+              fluidRow(
+                box(title = "Curriculum Overview",visNetworkOutput("overallcnetworkid"))
+              ))
       )
       )
     )
@@ -522,6 +522,31 @@ visNetwork(C_min$node_list,C_min$edge_list,width="100%",
       alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
     )
   })
+  
+  output$overallcnetworkid<- renderVisNetwork({
+    coords <- generate_coords(C)
+visNetwork(C$node_list,C$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C$sc_total,
+      "Total Blocking Factor:",
+      C$bf_total,
+      "Total Delay Factor:",
+      C$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visInteraction(navigationButtons = TRUE) %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
 }
 
 shinyApp(ui, server)
@@ -529,3 +554,4 @@ shinyApp(ui, server)
 
 
 ```
+
