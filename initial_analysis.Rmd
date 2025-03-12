@@ -19,10 +19,11 @@ library(readxl)
 library(CurricularAnalytics)
 library(visNetwork)
 library(shiny)
+library(kableExtra)
 ```
 
 
-```{r data import}
+```{r data import, eval=FALSE, include=FALSE}
 all_courses<- import(here("data/UG_course_prereq_split - UG_course_prereq.csv.csv")) %>% 
   clean_names() %>% 
   rename(course_id = "v1",
@@ -39,7 +40,7 @@ prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>%
 ```
 
 
-```{r visualization and cleaning}
+```{r visualization and cleaning, eval=FALSE, include=FALSE}
   
 sample_data <- read_excel("data/Untitled spreadsheet (1).xlsx") %>% 
   add_row(requisites = "CS299",Course = "CS299")
@@ -69,7 +70,7 @@ Aggregate Course Data
 -corequisite
 
 Problems -- singletons, prereqs from outside departments!
-```{r prereq parser}
+```{r prereq parser, eval=FALSE, include=FALSE}
 
 
 #goal is generate a list of edges and the requirements for each edge to be active. 
@@ -101,7 +102,7 @@ edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
 edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
 ```
 
-```{r}
+```{r, eval=FALSE, include=FALSE}
 get_prereq_edges <-  function(all_courses,index){
   layer_0 <- str_split(all_courses$prereqtext[[index]],pattern = " AND ")
   layer_1 <- str_split(flatten(layer_0),pattern = " OR ")
@@ -196,69 +197,7 @@ generate_coords <- function(curriculum_graph) {
 
 
 
-```{r shiny_dash}
 
-
-
-ui <- dashboardPage(
-  dashboardHeader(title = "UO Curriculum Analytics"),
-  dashboardSidebar(
-    sidebarMenu(
-      menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
-      menuItem("Widgets", tabName = "widgets", icon = icon("th"))
-    )
-  ),
-  dashboardBody(
-    tabItems(
-      # First tab content
-      tabItem(tabName = "dashboard",
-        fluidRow(
-          box(visNetworkOutput("mynetworkid"))
-          )
-        )
-      ),
-
-      # Second tab content
-      tabItem(tabName = "widgets",
-        h2("Widgets tab content")
-      )
-    )
-  )
-
-
-server <- function(input, output) {
-
-  output$mynetworkid <- renderVisNetwork({
-    coords <- generate_coords(C)
-visNetwork(C$node_list,C$edge_list,width="100%",
-           submain = paste(
-      "Total Structural Complexity:",
-      C$sc_total,
-      "Total Blocking Factor:",
-      C$bf_total,
-      "Total Delay Factor:",
-      C$df_total
-    )) %>% 
-  visNodes(shape = "circle", 
-           color = list(background = "lightgreen", 
-                        border = "darkgreen",
-                        highlight = "yellow")) %>%
-  visEdges(arrows = "to",color = "green") %>% 
-  visIgraphLayout(layout= "layout.norm",layoutMatrix = C_coords) %>% 
-  visOptions(selectedBy = "group") %>% 
-  visInteraction(navigationButtons = TRUE) %>% 
-  visEvents(
-      selectNode = "function(properties) {
-      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
-    )
-  })
-}
-
-shinyApp(ui, server)
-
-
-
-```
 
 #write my vignettes on what we're trying to do, have a comparison of two majors!
 
@@ -276,9 +215,7 @@ Degree/Dept Comparisons
 raw_list <- read.csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 # Create list for storing pathways
 Gc <- list()
-
-set.seed(87460945)
-for (i in 1:50) {
+for (i in 1:200) {
   # Generate degree pathway
   pathway <-
     data.frame(
@@ -367,7 +304,7 @@ for (i in 1:50) {
 
 node_list <-
   data.frame(
-    id = rownames(pathway),
+    id = pathway$id,
     label = pathway$label,
     term = pathway$term
   )
@@ -381,8 +318,10 @@ for (node_id in node_list$id) {
        req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
        for (req_id in req_ids) {
          if (!req_id %in% node_list$id){
+          
            req_node <- subset(raw_list,id == req_id)
            node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+
          }
        }
 #      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
@@ -401,54 +340,74 @@ for (node_id in node_list$id) {
 
 
 
-# for (node in node_list$label) {
-#   # node = "COSC 329"
-#   str <- subset(pathway, label == node)$requisites
-#   
-#   
-#   
-#   
-#   
-# 
-#   from <- rownames(subset(pathway, label == node))
-#   to <- rownames(subset(pathway, label %in% str))
-#   if (length(to) > 1) {
-#     for (id in to) {
-#       edge_list <- rbind(edge_list, data.frame(from = id, to = from))
-#     }
-#   } else {
-#     edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
-#   }
-# 
-# }
-edge_list <- na.omit(edge_list)
 node_list$id <- as.numeric(node_list$id)
-
-node_list$new_id <- 1:32
+node_list$new_id <- seq_along(node_list$id)
 new_id_list <- data.frame(
   id = NA
 )
-new_edge_list <- data.frame(from = NA, to = NA)
-for (i in 1:40){
-  old_val <- edge_list$from[i]
+new_to_list <- data.frame(id= NA)
 
+edge_list <- na.omit(edge_list)
+
+new_edge_list <- data.frame(from = NA, to = NA)
+new_node_list <- data.frame(id = NA, label = NA, term = NA)
+for (i in 1:length(edge_list$from)){
+  old_val <- edge_list$from[i]
+  old_to_val <- edge_list$to[i]
+  new_to_val <- subset(node_list,id == old_to_val)$new_id
   new_val <- subset(node_list, id == old_val)$new_id
   new_id_list <- rbind(new_id_list,new_val)
+  new_to_list <- rbind(new_to_list,new_to_val)
+
 }
+
 new_id_list <- na.omit(new_id_list)
+new_to_list <- na.omit(new_to_list)
 
 new_node_list <- data.frame(id = node_list$new_id,
                             label = node_list$label,
                             term = node_list$term)
 
+
+
 new_edge_list <- data.frame(from = new_id_list,
-                            to = edge_list$to) %>% 
+                            to = new_to_list$id) %>% 
   rename(from = id) %>% 
-  mutate(from = as.character(from))
+  mutate(from = as.character(from)) 
 
 C <- curriculum_graph_from_list(new_node_list, new_edge_list)
 Gc <- c(Gc, list(C))
 }
+```
+
+
+```{r}
+
+
+# # Initialize variables for maximum and minimum values
+max_total <- -Inf
+min_total <- Inf
+max_index <- NULL
+min_index <- NULL
+#
+# # Iterate through Gc to find max and min indices
+for (i in seq_along(Gc)) {
+  total <- sum(Gc[[i]]$sc_total)
+  if (total > max_total) {
+    max_total <- total
+    max_index <- i
+  }
+  if (total < min_total) {
+    min_total <- total
+    min_index <- i
+  }
+}
+
+C_max <- Gc[[max_index]]
+
+
+C_min <- Gc[[min_index]]
+
 ```
 
 
@@ -463,12 +422,110 @@ C_coords <- generate_coords(C)
 ```
 
 
+
 ```{r}
-C_orig <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 
-C_orig$node_list$group <- C_orig$node_list$label %>% 
-  map(str_extract,pattern = "[A-Z]+")
+print_top_two_rows <- function(df, column) {
+  ordered_df <- df[rev(order(df[[column]])), ]
+  top_two <- head(ordered_df, 3)
+  print(top_two)
+}
+columns <- colnames(C_max$node_list[,c("bf","df","cf","sc")])
+for (column in columns) {
+  print(paste("Ordering by column:", column))
+  print_top_two_rows(C_max$node_list, column)
+}
 
-orig_coords <- generate_coords(C_orig)
+idx <- !(C_max$node_list$label %in% C_min$node_list$label)
+kable(data.frame(Courses=C_max$node_list$label[idx]))
+
+
+idx <- !(C_min$node_list$label %in% C_max$node_list$label)
+kable(data.frame(Courses=C_min$node_list$label[idx]))
 ```
 
+
+```{r shiny_dash}
+
+
+
+ui <- dashboardPage(
+  dashboardHeader(title = "UO Curriculum Analytics"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+      menuItem("Widgets", tabName = "widgets", icon = icon("th"))
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      # First tab content
+      tabItem(tabName = "dashboard",
+        fluidRow(
+          box(title ="Max CS Degree Path",visNetworkOutput("maxnetworkid")),
+          box(title = "Min CS Degree Path",visNetworkOutput("minnetworkid"))
+          )
+        )
+      )
+      )
+    )
+
+
+server <- function(input, output) {
+
+  output$maxnetworkid <- renderVisNetwork({
+    max_coords <- generate_coords(C_max)
+visNetwork(C_max$node_list,C_max$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C_max$sc_total,
+      "Total Blocking Factor:",
+      C_max$bf_total,
+      "Total Delay Factor:",
+      C_max$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = max_coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visInteraction(navigationButtons = TRUE) %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
+  
+  output$minnetworkid <- renderVisNetwork({
+    min_coords <- generate_coords(C_min)
+visNetwork(C_min$node_list,C_min$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C_min$sc_total,
+      "Total Blocking Factor:",
+      C_min$bf_total,
+      "Total Delay Factor:",
+      C_min$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = min_coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visInteraction(navigationButtons = TRUE) %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert(' sc: ' + this.body.data.nodes.get(properties.nodes[0]).sc + ' cf: ' + this.body.data.nodes.get(properties.nodes[0]).cf + ' bf: ' + this.body.data.nodes.get(properties.nodes[0]).bf + ' df: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
+}
+
+shinyApp(ui, server)
+
+
+
+```
