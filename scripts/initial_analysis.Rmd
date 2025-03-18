@@ -3,6 +3,7 @@ title: "cleaning_and_setup"
 author: "Errol Kaylor"
 date: "`r Sys.Date()`"
 output: html_document
+runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
@@ -13,49 +14,603 @@ library(here)
 library(janitor)
 library(pdftools)
 library(tabulapdf)
-library(ggplot2)
+library(shinydashboard)
+library(igraph)
+library(readxl)
+library(CurricularAnalytics)
+library(visNetwork)
+library(shiny)
+library(kableExtra)
 ```
 
 
-```{r data import}
-test_1<- tabulapdf::extract_tables("data/ug-computer-science.pdf")
-
-
-int_data_test <- tabulapdf::extract_areas("data/ug-computer-science.pdf")
-
-
-cs_pdf <- pdf_data("data/ug-computer-science.pdf")
-
-new_text <- pdf_text("data/ug-data-science.pdf")
-
+```{r data import, eval=FALSE, include=FALSE}
+all_courses<- import(here("data/UG_course_prereq_split - UG_course_prereq.csv.csv")) %>% 
+  clean_names() %>% 
+  rename(course_id = "v1",
+         has_prereq = "v2",
+         course_dept = "v3",
+         course_num = "v4") %>% 
+  select(-c(5,6)) %>% 
+  filter(course_id != "Common_Course_ID") %>% 
+  filter(course_dept == "CS" | course_dept == "MATH")
 
 
 prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>% 
   clean_names()
 ```
 
-Initial Steps
-1. Visualize Prereq Data
-2. Extract Course Data from online sources
-3. Process Course Data, cross with prereq data for consilidated dataset.
 
-```{r prereq visualization and cleaning}
+```{r visualization and cleaning, eval=FALSE, include=FALSE}
+  
+sample_data <- read_excel("data/Untitled spreadsheet (1).xlsx") %>% 
+  add_row(requisites = "CS299",Course = "CS299")
+
 test_set<- prereqs %>% 
-  filter(subject == "ARCH" | subject == "CS") %>% 
-  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) )
+  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) ) %>% 
+  filter(subject=="CS" | subject == "MATH") %>% 
+  group_by(course_identification) %>% 
+  reframe(count_offered = n(),
+          prereqtext = requisites_text) %>% 
+  distinct()
 
-courses_per_dept <- test_set %>% 
-  ggplot(aes(subject)) +
-  geom_bar()+
-  facet_wrap(vars(academic_period))
 
-courses_per_dept
+all_courses <- full_join(all_courses,test_set, by=join_by(course_id==course_identification))
 
-?facet_wrap
+
+```
+
+Need to create a parser for the requisitess
+Aggregate Course Data
+- Number of requisitess
+- Frequency Offered
+- Number of layers of requisitess
+- Number of dependencies
+
+
+-corequisite
+
+Problems -- singletons, prereqs from outside departments!
+```{r prereq parser, eval=FALSE, include=FALSE}
+
+
+#goal is generate a list of edges and the requirements for each edge to be active. 
+
+all_courses_filtered<- all_courses %>% 
+  select(-c(2,3,4,5)) %>% 
+  na.omit()
+all_courses$prereqtext[[1]]
+all_courses$prereqtext[[2]]
+layer_1 <- str_split(all_courses_filtered$prereqtext[[6]],pattern = " AND ")
+layer_2<- str_split(flatten(layer_1),pattern = " OR ")
+
+
+
+
+prereq_sample <- str_split(flatten(layer_2),pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF") 
+
+prereqs <- list_transpose(flatten(str_split(layer_1,pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF")))  
+
+
+prereq_transposed <- list_transpose(prereq_sample)
+
+edge_list <- tibble(prereq = prereq_transposed[[1]],
+                    grade_req = prereq_transposed[[2]],
+                    course = all_courses$course_id[[2]])
+
+
+edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
+edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
+```
+
+```{r, eval=FALSE, include=FALSE}
+get_prereq_edges <-  function(all_courses,index){
+  layer_0 <- str_split(all_courses$prereqtext[[index]],pattern = " AND ")
+  layer_1 <- str_split(flatten(layer_0),pattern = " OR ")
+  prereqs <- list_transpose(str_split(flatten(layer_1),pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF"))
+
+  edge_list <- tibble(prereq = prereqs[[1]],
+                      course = all_courses$course_id[[index]],
+                      grade_req = prereqs[[2]],
+                      nums = str_extract(course,pattern = "\\d\\d\\d" ),
+                      x = str_sub(nums,end=1),
+         y = str_sub(nums,2)
+                      )
+  
+  
+  edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
+  edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
+  
+  
+  
+  
+  edge_list
+}
+
+
+all_courses_filtered<- all_courses_filtered  %>% 
+  mutate(nums = str_extract(all_courses_filtered$course_id,pattern = "\\d\\d\\d" ),
+         x = str_sub(nums,end=1),
+         y = str_sub(nums,2))
+
+edge_list <- tibble()
+for (i in seq_along(all_courses_filtered[[1]])){
+  print(i)
+  edge_list <-rbind(get_prereq_edges(all_courses_filtered,i),edge_list)
+}
+
+
+```
+
+
+Visualization Ideas
+Overview/Course Analytics Definitions
+
+Department/Degree View
+-All courses in department
+-
+
+```{r}
+
+#C <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+
+#term is used for horizontal spacing -- use department as chunk area (+20, then index)
+#
+#
+generate_coords <- function(curriculum_graph) {
+  coords <- matrix(ncol = 2)
+
+  #track num courses in each dept/term, increment by 1, starting from 0
+  #
+  num_in_section <- array(0,dim = c(5,10))
+  y_coord <- 0
+  old_dept <- "not!"
+  old_term <- 0
+  for (i in curriculum_graph$node_list$id) {
+    term <- as.numeric(curriculum_graph$node_list$term[i])
+    label <- curriculum_graph$node_list$label[i]
+    nums <- as.numeric(str_extract(label,pattern = "\\d\\d\\d"))
+    dept <- str_extract(label,pattern ="[A-Z]+")
+    y_starter <- case_when(
+      dept == "CS" ~ 1,
+      dept == "MATH" ~ 2,
+      dept == "PHYS" ~ 3,
+      dept == "PEO" ~ 4
+    )
+
+    section_depth <- num_in_section[y_starter,term]
+    
+    num_in_section[y_starter,term]<-section_depth+2
+    
+    ycoord <- (y_starter * 20) + section_depth
+    
+    
+    coords <- rbind(coords, c(term,((y_starter * 25) + section_depth)))
+
+  }
+
+  coords <- stats::na.omit(coords)
+  return(coords)
+}
+
 ```
 
 
 
 
+
+
+#write my vignettes on what we're trying to do, have a comparison of two majors!
+
+CS Overview
+
+term Meaning/Definitions
+
+Degree/Dept Comparisons
+
+
+
+
+```{r}
+
+raw_list <- read.csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+# Create list for storing pathways
+Gpathway <- list()
+Gc <- list()
+set.seed(6402025)
+for (i in 1:200) {
+  # Generate degree pathway
+  pathway <-
+    data.frame(
+      id = NA,
+      label = NA,
+      term = NA,
+      requisites = NA
+    )
+
+  # First Year
+  pathway <-
+    rbind(pathway, cbind(
+      subset(raw_list, label == "CS210")
+    ))
+  samp <- sample(c("MATH251", "MATH246"), 1)
+  pathway <-
+    rbind(pathway, cbind(subset(raw_list, label == samp)))
+    samp <- sample(c("MATH252", "MATH247"), 1)
+  pathway <-
+    rbind(pathway, cbind(subset(raw_list, label == samp)))
+
+  samp <- sample(c(TRUE, FALSE), 1)
+
+    pathway <-
+      rbind(pathway, cbind(
+        subset(raw_list, label == "CS211")
+      ))
+
+
+  # Second Year
+  pathway <-
+    rbind(pathway, cbind(subset(
+      raw_list,
+      label %in% c("CS212",
+                         "MATH231",
+                         "CS314",
+                         "MATH232",
+                         "CS322")
+    )))
+
+
+  # Third and Fourth Year
+  pathway <-
+    rbind(pathway, cbind(subset(
+      raw_list,
+      label %in% c("CS313",
+                         "CS315",
+                         "CS330",
+                         "CS415",
+                         "CS425",
+                         "CS422")
+    )))
+
+  #Math Requirements
+  samp <- sample(c("MATH253","MATH341","MATH343","MATH425","MATH345"),1)
+  pathway<-rbind(pathway,cbind(subset(raw_list,label == samp)))
+
+
+  upper_year_data <-
+    c("CS413","CS420","CS423","CS429","CS431","CS432","CS433","CS434","CS436","CS437","CS441","CS443","CS445","CS451","CS453","CS461","CS471","CS472","CS473")
+
+  course <- c()
+  while (length(unique(course)) < 5) {
+      course <- c(course, sample(upper_year_data, 1))
+  }
+
+  pathway <-
+    rbind(pathway, cbind(
+      subset(raw_list, label %in% unique(course))
+     ))
+
+  pathway <- na.omit(pathway)
+  rownames(pathway) <- 1:nrow(pathway)
+  # Construct node and edge list
+
+node_list <-
+  data.frame(
+    id = pathway$id,
+    label = pathway$label,
+    term = pathway$term
+  )
+
+edge_list <- data.frame(from = NA, to = NA)
+
+for (node_id in node_list$id) {
+    node_reqs <- subset(raw_list, id == node_id)$requisites
+    req_ids <- ""
+     if (node_reqs != "") {
+       req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
+       for (req_id in req_ids) {
+         if (!req_id %in% node_list$id){
+          
+           req_node <- subset(raw_list,id == req_id)
+           node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+
+         }
+       }
+#      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
+
+      from <- rownames(subset(raw_list, id == node_id))
+      to <- rownames(subset(raw_list, id %in% req_ids))
+      if (length(to) > 1) {
+        for (id in to) {
+          edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+        }
+      } else {
+        edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+      }
+     }
+}
+
+
+for (node_id in node_list$id) {
+    node_reqs <- subset(raw_list, id == node_id)$requisites
+    req_ids <- ""
+     if (node_reqs != "") {
+       req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
+       for (req_id in req_ids) {
+         if (!req_id %in% node_list$id){
+          
+           req_node <- subset(raw_list,id == req_id)
+           node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+
+         }
+       }
+#      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
+
+      from <- rownames(subset(raw_list, id == node_id))
+      to <- rownames(subset(raw_list, id %in% req_ids))
+      if (length(to) > 1) {
+        for (id in to) {
+          edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+        }
+      } else {
+        edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+      }
+     }
+}
+
+
+
+
+node_list$id <- as.numeric(node_list$id)
+node_list$new_id <- seq_along(node_list$id)
+new_id_list <- data.frame(
+  id = NA
+)
+new_to_list <- data.frame(id= NA)
+
+edge_list <- na.omit(edge_list)
+
+new_edge_list <- data.frame(from = NA, to = NA)
+new_node_list <- data.frame(id = NA, label = NA, term = NA)
+for (i in 1:length(edge_list$from)){
+  old_val <- edge_list$from[i]
+  old_to_val <- edge_list$to[i]
+  new_to_val <- subset(node_list,id == old_to_val)$new_id
+  new_val <- subset(node_list, id == old_val)$new_id
+  new_id_list <- rbind(new_id_list,new_val)
+  new_to_list <- rbind(new_to_list,new_to_val)
+
+}
+
+new_id_list <- na.omit(new_id_list)
+new_to_list <- na.omit(new_to_list)
+
+new_node_list <- data.frame(id = node_list$new_id,
+                            label = node_list$label,
+                            term = node_list$term)
+
+
+
+new_edge_list <- data.frame(from = new_id_list,
+                            to = new_to_list$id) %>% 
+  rename(from = id) %>% 
+  mutate(from = as.character(from)) %>% 
+  unique()
+
+C <- curriculum_graph_from_list(new_node_list, new_edge_list)
+Gc <- c(Gc, list(C))
+Gpathway<- c(Gpathway, list(pathway))
+}
+```
+
+
+```{r}
+
+
+# # Initialize variables for maximum and minimum values
+max_total <- -Inf
+min_total <- Inf
+max_index <- NULL
+min_index <- NULL
+#
+# # Iterate through Gc to find max and min indices
+for (i in seq_along(Gc)) {
+  total <- sum(Gc[[i]]$sc_total)
+  if (total > max_total) {
+    max_total <- total
+    max_index <- i
+  }
+  if (total < min_total) {
+    min_total <- total
+    min_index <- i
+  }
+}
+
+C_max <- Gc[[max_index]]
+
+
+C_min <- Gc[[min_index]]
+
+C<-curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
+
+
+C$node_list$group <- C$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
+
+C_max$node_list$group <- C_max$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
+
+C_min$node_list$group <- C_min$node_list$label %>% 
+  map(str_extract,pattern = "[A-Z]+")
+```
+
+
+```{r}
+
+print_top_two_rows <- function(df, column) {
+  ordered_df <- df[rev(order(df[[column]])), ]
+  top_two <- head(ordered_df, 3)
+  print(top_two)
+}
+columns <- colnames(C_max$node_list[,c("bf","df","cf","sc")])
+for (column in columns) {
+  print(paste("Ordering by column:", column))
+  print_top_two_rows(C_max$node_list, column)
+}
+
+columns <- colnames(C$node_list[,c("bf","df","cf","sc")])
+for (column in columns) {
+  print(paste("Ordering by column:", column))
+  print_top_two_rows(C$node_list, column)
+}
+
+idx <- !(C_max$node_list$label %in% C_min$node_list$label)
+kable(data.frame(Courses=C_max$node_list$label[idx]))
+
+
+idx <- !(C_min$node_list$label %in% C_max$node_list$label)
+kable(data.frame(Courses=C_min$node_list$label[idx]))
+
+
+```
+
+
+```{r shiny_dash}
+
+
+
+ui <- dashboardPage(
+  dashboardHeader(title = "UO Curriculum Analytics"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Degree Path Analysis", tabName = "dashboard", icon = icon("dashboard")),
+      menuItem("Overview", tabName = "overview", icon = icon("th"))
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      # First tab content
+      tabItem(tabName = "dashboard",
+        fluidRow(
+          box(title ="Max CS Degree Path",visNetworkOutput("maxnetworkid")),
+          box(title = "Min CS Degree Path",visNetworkOutput("minnetworkid"))
+          ),
+        fluidRow(
+          box(title = "Max Path Courses Overview",tableOutput("max_only_courses")),
+          box(title = "Min Path Courses Overview",tableOutput("min_only_courses"))
+        )
+        ),
+      tabItem(tabName = "overview",
+              fluidRow(
+                box(title = "Curriculum Overview",visNetworkOutput("overallcnetworkid"))
+              ))
+      )
+      )
+    )
+
+
+server <- function(input, output) {
+  library(dplyr)
+  library(kableExtra)
+  output$maxnetworkid <- renderVisNetwork({
+    max_coords <- generate_coords(C_max)
+visNetwork(C_max$node_list,C_max$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C_max$sc_total,
+      "Total Blocking Factor:",
+      C_max$bf_total,
+      "Total Delay Factor:",
+      C_max$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = max_coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
+  
+  output$minnetworkid <- renderVisNetwork({
+    min_coords <- generate_coords(C_min)
+visNetwork(C_min$node_list,C_min$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C_min$sc_total,
+      "Total Blocking Factor:",
+      C_min$bf_total,
+      "Total Delay Factor:",
+      C_min$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = min_coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
+  
+  output$overallcnetworkid<- renderVisNetwork({
+    coords <- generate_coords(C)
+visNetwork(C$node_list,C$edge_list,width="100%",
+           submain = paste(
+      "Total Structural Complexity:",
+      C$sc_total,
+      "Total Blocking Factor:",
+      C$bf_total,
+      "Total Delay Factor:",
+      C$df_total
+    )) %>% 
+  visNodes(shape = "circle", 
+           color = list(background = "lightgreen", 
+                        border = "darkgreen",
+                        highlight = "yellow")) %>%
+  visEdges(arrows = "to",color = "green") %>% 
+  visIgraphLayout(layout= "layout.norm",layoutMatrix = coords) %>% 
+  visOptions(selectedBy = "group") %>% 
+  visEvents(
+      selectNode = "function(properties) {
+      alert('Course Code: ' + this.body.data.nodes.get(properties.nodes[0]).label + '; Structural Complexity: ' + this.body.data.nodes.get(properties.nodes[0]).sc + '; Centrality Factor: ' + this.body.data.nodes.get(properties.nodes[0]).cf + '; Blocking Factor: ' + this.body.data.nodes.get(properties.nodes[0]).bf + '; Delay Factor: ' + this.body.data.nodes.get(properties.nodes[0]).df);}"
+    )
+  })
+  
+  idx <- !(C_max$node_list$label %in% C_min$node_list$label)
+  max_tab <- data.frame(Max_Only_Courses=C_max$node_list$label[idx],
+                        BLocking_Factor = C_max$node_list$bf[idx],
+                        Delay_Factor = C_max$node_list$df[idx],
+                        Centrality = C_max$node_list$cf[idx],
+                        Structural_Complexity = C_max$node_list$sc[idx])
+
+  
+  
+  idx <- !(C_min$node_list$label %in% C_max$node_list$label)
+  min_tab<- data.frame(Min_Only_Courses=C_min$node_list$label[idx],
+                       BLocking_Factor = C_min$node_list$bf[idx],
+                        Delay_Factor = C_min$node_list$df[idx],
+                        Centrality = C_min$node_list$cf[idx],
+                        Structural_Complexity = C_min$node_list$sc[idx])
+  
+    output$max_only_courses <- renderTable(kable(max_tab),
+                                           striped = TRUE,
+                                           align = "c")
+    output$min_only_courses <- renderTable(kable(min_tab),
+                                           striped = TRUE,
+                                           align = "c")
+}
+
+shinyApp(ui, server)
+
+
+```
 
 

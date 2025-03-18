@@ -1,5 +1,5 @@
 ---
-title: "cleaning_and_setup"
+title: "UO Curricular Analytics Shiny Dashboard"
 author: "Errol Kaylor"
 date: "`r Sys.Date()`"
 output: html_document
@@ -7,13 +7,10 @@ runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(rio)
 library(here)
 library(janitor)
-library(pdftools)
-library(tabulapdf)
 library(shinydashboard)
 library(igraph)
 library(readxl)
@@ -24,200 +21,23 @@ library(kableExtra)
 ```
 
 
-```{r data import, eval=FALSE, include=FALSE}
-all_courses<- import(here("data/UG_course_prereq_split - UG_course_prereq.csv.csv")) %>% 
-  clean_names() %>% 
-  rename(course_id = "v1",
-         has_prereq = "v2",
-         course_dept = "v3",
-         course_num = "v4") %>% 
-  select(-c(5,6)) %>% 
-  filter(course_id != "Common_Course_ID") %>% 
-  filter(course_dept == "CS" | course_dept == "MATH")
+First part here is creating different degree pathways, drawing courses from a central list with the following columns:
+id: Integer values for each course, starting from 1 and increasing in order.
+label:Short Name for the course, e.g. "CS 201"
+term: Integer representing which term a course should be taken in. 1 represents first term of their first year, 3 is the third term of their first year, 5 is the second term of their second year, and so on.
+requisites: list of course ID's that lead to the course, e.g. 5;6;11;13 
+```{r pathway creation}
 
+#This dataset contains 130 courses, spread out across the Math, Physics, and Computer Science departments. 
+#An important next step is ingesting this from the course catalog directly, rather than hand-coding the requisites.
+#Link to Computer Science Major Requirements -- https://catalog.uoregon.edu/arts-sciences/school-computer-data-sciences/computer-science/ug-computer-science/#requirementstext 
 
-prereqs <- import(here("data/Prereq_Coreq_AY2324 Cleaned.xlsx")) %>% 
-  clean_names()
-```
-
-
-```{r visualization and cleaning, eval=FALSE, include=FALSE}
-  
-sample_data <- read_excel("data/Untitled spreadsheet (1).xlsx") %>% 
-  add_row(requisites = "CS299",Course = "CS299")
-
-test_set<- prereqs %>% 
-  filter(active_course_ind == "Y" & !grepl('Law',academic_period_desc) ) %>% 
-  filter(subject=="CS" | subject == "MATH") %>% 
-  group_by(course_identification) %>% 
-  reframe(count_offered = n(),
-          prereqtext = requisites_text) %>% 
-  distinct()
-
-
-all_courses <- full_join(all_courses,test_set, by=join_by(course_id==course_identification))
-
-
-```
-
-Need to create a parser for the requisitess
-Aggregate Course Data
-- Number of requisitess
-- Frequency Offered
-- Number of layers of requisitess
-- Number of dependencies
-
-
--corequisite
-
-Problems -- singletons, prereqs from outside departments!
-```{r prereq parser, eval=FALSE, include=FALSE}
-
-
-#goal is generate a list of edges and the requirements for each edge to be active. 
-
-all_courses_filtered<- all_courses %>% 
-  select(-c(2,3,4,5)) %>% 
-  na.omit()
-all_courses$prereqtext[[1]]
-all_courses$prereqtext[[2]]
-layer_1 <- str_split(all_courses_filtered$prereqtext[[6]],pattern = " AND ")
-layer_2<- str_split(flatten(layer_1),pattern = " OR ")
-
-
-
-
-prereq_sample <- str_split(flatten(layer_2),pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF") 
-
-prereqs <- list_transpose(flatten(str_split(layer_1,pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF")))  
-
-
-prereq_transposed <- list_transpose(prereq_sample)
-
-edge_list <- tibble(prereq = prereq_transposed[[1]],
-                    grade_req = prereq_transposed[[2]],
-                    course = all_courses$course_id[[2]])
-
-
-edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
-edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
-```
-
-```{r, eval=FALSE, include=FALSE}
-get_prereq_edges <-  function(all_courses,index){
-  layer_0 <- str_split(all_courses$prereqtext[[index]],pattern = " AND ")
-  layer_1 <- str_split(flatten(layer_0),pattern = " OR ")
-  prereqs <- list_transpose(str_split(flatten(layer_1),pattern = " FOR LEVEL UG WITH MIN. GRADE OF | FOR LEVEL GR WITH MIN. GRADE OF | FOR MIN. SCORE OF"))
-
-  edge_list <- tibble(prereq = prereqs[[1]],
-                      course = all_courses$course_id[[index]],
-                      grade_req = prereqs[[2]],
-                      nums = str_extract(course,pattern = "\\d\\d\\d" ),
-                      x = str_sub(nums,end=1),
-         y = str_sub(nums,2)
-                      )
-  
-  
-  edge_list$prereq<- str_remove(edge_list$prereq,"\\(|\\)")
-  edge_list$grade_req <- str_remove(edge_list$grade_req,"\\(|\\)")
-  
-  
-  
-  
-  edge_list
-}
-
-
-all_courses_filtered<- all_courses_filtered  %>% 
-  mutate(nums = str_extract(all_courses_filtered$course_id,pattern = "\\d\\d\\d" ),
-         x = str_sub(nums,end=1),
-         y = str_sub(nums,2))
-
-edge_list <- tibble()
-for (i in seq_along(all_courses_filtered[[1]])){
-  print(i)
-  edge_list <-rbind(get_prereq_edges(all_courses_filtered,i),edge_list)
-}
-
-
-```
-
-
-Visualization Ideas
-Overview/Course Analytics Definitions
-
-Department/Degree View
--All courses in department
--
-
-```{r}
-
-#C <- curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
-
-#term is used for horizontal spacing -- use department as chunk area (+20, then index)
-#
-#
-generate_coords <- function(curriculum_graph) {
-  coords <- matrix(ncol = 2)
-
-  #track num courses in each dept/term, increment by 1, starting from 0
-  #
-  num_in_section <- array(0,dim = c(5,10))
-  y_coord <- 0
-  old_dept <- "not!"
-  old_term <- 0
-  for (i in curriculum_graph$node_list$id) {
-    term <- as.numeric(curriculum_graph$node_list$term[i])
-    label <- curriculum_graph$node_list$label[i]
-    nums <- as.numeric(str_extract(label,pattern = "\\d\\d\\d"))
-    dept <- str_extract(label,pattern ="[A-Z]+")
-    y_starter <- case_when(
-      dept == "CS" ~ 1,
-      dept == "MATH" ~ 2,
-      dept == "PHYS" ~ 3,
-      dept == "PEO" ~ 4
-    )
-
-    section_depth <- num_in_section[y_starter,term]
-    
-    num_in_section[y_starter,term]<-section_depth+2
-    
-    ycoord <- (y_starter * 20) + section_depth
-    
-    
-    coords <- rbind(coords, c(term,((y_starter * 25) + section_depth)))
-
-  }
-
-  coords <- stats::na.omit(coords)
-  return(coords)
-}
-
-```
-
-
-
-
-
-
-#write my vignettes on what we're trying to do, have a comparison of two majors!
-
-CS Overview
-
-term Meaning/Definitions
-
-Degree/Dept Comparisons
-
-
-
-
-```{r}
 
 raw_list <- read.csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 # Create list for storing pathways
 Gpathway <- list()
 Gc <- list()
-set.seed(6402025)
+set.seed(6402025) #Setting a seed for reproducibility.
 for (i in 1:200) {
   # Generate degree pathway
   pathway <-
@@ -226,8 +46,9 @@ for (i in 1:200) {
       label = NA,
       term = NA,
       requisites = NA
+      #After adding more columns to the input dataset, add them here as well
     )
-
+  #
   # First Year
   pathway <-
     rbind(pathway, cbind(
@@ -276,7 +97,7 @@ for (i in 1:200) {
   samp <- sample(c("MATH253","MATH341","MATH343","MATH425","MATH345"),1)
   pathway<-rbind(pathway,cbind(subset(raw_list,label == samp)))
 
-
+  #Next section selects a subset of upper level courses to add to the pathway. 
   upper_year_data <-
     c("CS413","CS420","CS423","CS429","CS431","CS432","CS433","CS434","CS436","CS437","CS441","CS443","CS445","CS451","CS453","CS461","CS471","CS472","CS473")
 
@@ -302,7 +123,8 @@ node_list <-
   )
 
 edge_list <- data.frame(from = NA, to = NA)
-
+#the following loop adds all requisites to the node list, and all associated edges.
+#the loop only goes back one level (could rewrite to be more efficient) so we run it 3 times in case a there were multiple levels of requisites to sign up for a chosen course above.
 for (node_id in node_list$id) {
     node_reqs <- subset(raw_list, id == node_id)$requisites
     req_ids <- ""
@@ -330,6 +152,33 @@ for (node_id in node_list$id) {
      }
 }
 
+
+for (node_id in node_list$id) {
+    node_reqs <- subset(raw_list, id == node_id)$requisites
+    req_ids <- ""
+     if (node_reqs != "") {
+       req_ids <- as.numeric(strsplit(node_reqs, ";")[[1]])
+       for (req_id in req_ids) {
+         if (!req_id %in% node_list$id){
+          
+           req_node <- subset(raw_list,id == req_id)
+           node_list <- rbind(node_list,c(req_node$id,req_node$label,req_node$term))
+
+         }
+       }
+#      node_list <- rbind(node_list,cbind(subset(raw_list, id %in% req_ids)))
+
+      from <- rownames(subset(raw_list, id == node_id))
+      to <- rownames(subset(raw_list, id %in% req_ids))
+      if (length(to) > 1) {
+        for (id in to) {
+          edge_list <- rbind(edge_list, data.frame(from = id, to = from))
+        }
+      } else {
+        edge_list <- rbind(edge_list, data.frame(from = to[1], to = from))
+      }
+     }
+}
 
 for (node_id in node_list$id) {
     node_reqs <- subset(raw_list, id == node_id)$requisites
@@ -372,6 +221,9 @@ edge_list <- na.omit(edge_list)
 
 new_edge_list <- data.frame(from = NA, to = NA)
 new_node_list <- data.frame(id = NA, label = NA, term = NA)
+
+
+#the id's from the original course list are out of order, here we link those old id's to new ones to create graphable node and edge lists.
 for (i in 1:length(edge_list$from)){
   old_val <- edge_list$from[i]
   old_to_val <- edge_list$to[i]
@@ -403,17 +255,14 @@ Gpathway<- c(Gpathway, list(pathway))
 }
 ```
 
-
-```{r}
-
-
+```{r max and min paths}
 # # Initialize variables for maximum and minimum values
 max_total <- -Inf
 min_total <- Inf
 max_index <- NULL
 min_index <- NULL
 #
-# # Iterate through Gc to find max and min indices
+# # Iterate through Gc to find graphs in GC with maximum and minimal structural complexity.
 for (i in seq_along(Gc)) {
   total <- sum(Gc[[i]]$sc_total)
   if (total > max_total) {
@@ -433,7 +282,7 @@ C_min <- Gc[[min_index]]
 
 C<-curriculum_graph_from_csv(here("data/Untitled spreadsheet - Sheet1.csv"))
 
-
+#Add a column to the curriculum graphs showing the department each course belongs to.
 C$node_list$group <- C$node_list$label %>% 
   map(str_extract,pattern = "[A-Z]+")
 
@@ -445,13 +294,57 @@ C_min$node_list$group <- C_min$node_list$label %>%
 ```
 
 
-```{r}
 
+```{r functions}
+#coordinates for the network visualization is a matrix with two columns and one row for each node in the network.
+#coordinates are set to split each department into a different segment vertically, and horizontally by term. As courses are added to the same department and term, the y_coordinate is incremented.
+
+generate_coords <- function(curriculum_graph) {
+  coords <- matrix(ncol = 2)
+
+
+  num_in_section <- array(0,dim = c(5,10))
+  y_coord <- 0
+  old_dept <- "not!"
+  old_term <- 0
+  for (i in curriculum_graph$node_list$id) {
+    term <- as.numeric(curriculum_graph$node_list$term[i])
+    label <- curriculum_graph$node_list$label[i]
+    nums <- as.numeric(str_extract(label,pattern = "\\d\\d\\d"))
+    dept <- str_extract(label,pattern ="[A-Z]+")
+    y_starter <- case_when(
+      dept == "CS" ~ 1,
+      dept == "MATH" ~ 2,
+      dept == "PHYS" ~ 3,
+      dept == "PEO" ~ 4
+    )
+
+    section_depth <- num_in_section[y_starter,term]
+    
+    num_in_section[y_starter,term]<-section_depth+2
+    
+    ycoord <- (y_starter * 20) + section_depth
+    
+    
+    coords <- rbind(coords, c(term,((y_starter * 25) + section_depth)))
+
+  }
+
+  coords <- stats::na.omit(coords)
+  return(coords)
+}
+
+#used for printing information from meaningful courses in a given network. 
 print_top_two_rows <- function(df, column) {
   ordered_df <- df[rev(order(df[[column]])), ]
   top_two <- head(ordered_df, 3)
   print(top_two)
 }
+
+```
+
+
+```{r tables}
 columns <- colnames(C_max$node_list[,c("bf","df","cf","sc")])
 for (column in columns) {
   print(paste("Ordering by column:", column))
@@ -470,15 +363,9 @@ kable(data.frame(Courses=C_max$node_list$label[idx]))
 
 idx <- !(C_min$node_list$label %in% C_max$node_list$label)
 kable(data.frame(Courses=C_min$node_list$label[idx]))
-
-
 ```
 
-
-```{r shiny_dash}
-
-
-
+```{r shiny dash}
 ui <- dashboardPage(
   dashboardHeader(title = "UO Curriculum Analytics"),
   dashboardSidebar(
@@ -512,6 +399,7 @@ ui <- dashboardPage(
 server <- function(input, output) {
   library(dplyr)
   library(kableExtra)
+#Below generates the network visualization for a given curriculum graph, and surfaces important structural elements of the network.  
   output$maxnetworkid <- renderVisNetwork({
     max_coords <- generate_coords(C_max)
 visNetwork(C_max$node_list,C_max$edge_list,width="100%",
